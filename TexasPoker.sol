@@ -41,15 +41,18 @@ contract TexasPoker is Ownable, IERC721Receiver {
         require(amount > 0, "Amount error");
         require(unlockTime > block.timestamp, "UnlockTime error");
 
-        ERC721(token).safeTransferFrom(msg.sender, address(this), tokenId);
-
-        userPledgeNFTInfos[msg.sender][token][tokenId] = true;
-
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
+        require(_gameInfo.playerNumber == 0, "Player not redeemed");
         _gameInfo.owner = msg.sender;
         _gameInfo.price = amount / 6;
         _gameInfo.open = true;
         _gameInfo.unlockTime = unlockTime;
+
+        ERC721(token).safeTransferFrom(msg.sender, address(this), tokenId);
+
+        userPledgeNFTInfos[msg.sender][token][tokenId] = true;
+
+        
 
         emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.PledgeNFT));
     }
