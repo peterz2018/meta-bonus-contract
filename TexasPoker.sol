@@ -52,8 +52,6 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
         userPledgeNFTInfos[msg.sender][token][tokenId] = true;
 
-        
-
         emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.PledgeNFT));
     }
 
