@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./access/Ownable.sol";
-import "./token/ERC721/ERC721.sol";
-import "./token/ERC721/IERC721Receiver.sol";
+import "./Ownable.sol";
+import "./ERC721.sol";
+import "./IERC721Receiver.sol";
 
 contract TexasPoker is Ownable, IERC721Receiver {
 
@@ -36,7 +36,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
     event OperationalInfo(address indexed token, uint256 indexed tokenId, address indexed user, uint operation);
 
-    function pledgeNFT(address token, uint256 tokenId, uint256 amount, uint256 unlockTime) public payable {
+    function pledgeNFT(address token, uint256 tokenId, uint256 amount, uint256 unlockTime) public {
         require(tokenId > 0, "TokenId error");
         require(amount > 0, "Amount error");
         require(unlockTime > block.timestamp, "UnlockTime error");
@@ -55,7 +55,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
         emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.PledgeNFT));
     }
 
-    function redeemNFT(address token, uint256 tokenId) public payable {
+    function redeemNFT(address token, uint256 tokenId) public {
         require(userPledgeNFTInfos[msg.sender][token][tokenId], "TokenId error");
 
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
@@ -91,7 +91,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
         emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.PledgeNFT));
     }
 
-    function redeemETH(address token, uint256 tokenId, uint256 location) public payable {
+    function redeemETH(address token, uint256 tokenId, uint256 location) public {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.unlockTime < block.timestamp, "Cannot be redeemed");
         require(_gameInfo.players[location] == msg.sender, "Location error");
