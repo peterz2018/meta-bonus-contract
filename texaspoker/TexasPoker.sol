@@ -61,7 +61,8 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.owner == msg.sender, "TokenId error");
-        require(_gameInfo.unlockTime < block.timestamp, "Cannot be redeemed");
+        require(_gameInfo.playerNumber == 6, "Cannot be redeemed");
+        require(_gameInfo.unlockTime < block.timestamp || _gameInfo.playerNumber == 0, "Cannot be redeemed");
 
         ERC721(token).safeTransferFrom(address(this), msg.sender, tokenId);
 
@@ -89,16 +90,14 @@ contract TexasPoker is Ownable, IERC721Receiver {
         _gameInfo.players[location] = msg.sender;
         _gameInfo.playerNumber ++;
 
-        emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.PledgeNFT));
+        emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.PledgeETH));
     }
 
     function redeemETH(address token, uint256 tokenId, uint256 location) public {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.playerNumber < 6, "Cannot be redeemed");
         require(_gameInfo.players[location] == msg.sender, "Location error");
-
-        uint256 _pledgeETH = userPledgeETHInfos[msg.sender][token][tokenId];
-        require(_pledgeETH == _gameInfo.price, "Eth error");
+        require(userPledgeETHInfos[msg.sender][token][tokenId] == _gameInfo.price, "Eth error");
         
         safeTransferETH(msg.sender, _pledgeETH);
 
@@ -118,7 +117,8 @@ contract TexasPoker is Ownable, IERC721Receiver {
         require(_gameInfo.playerNumber == 6, "The player number error");
 
         (uint256 amount, uint256 fee) = getAmount(_gameInfo.price);
-        safeTransferETH(_gameInfo.owner, amount);
+        address owner = _gameInfo.owner;
+        safeTransferETH(owner, amount);
         withdrawAmount = withdrawAmount + fee;
         userPledgeNFTInfos[_gameInfo.owner][token][tokenId] = false;
         
@@ -155,9 +155,9 @@ contract TexasPoker is Ownable, IERC721Receiver {
     }
 
     function getAmount(uint256 price) public view returns (uint256 settleAmount, uint256 fee) {
-        uint256 amount = price * 6;
-        uint256 fee = amount * rate / 10000;
-        return (amount - fee, fee);
+        uint256 _amount = price * 6;
+        uint256 _fee = _amount * rate / 10000;
+        return (_amount - _fee, _fee);
     }
 
     function getPlayers(address token, uint256 tokenId) public view returns (address[6] memory players) {
