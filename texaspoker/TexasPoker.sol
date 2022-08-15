@@ -12,6 +12,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
     }
 
     uint8 public rate = 250;
+    uint256 public withdrawAmount;
 
     // user > token > tokenId > true/false
     mapping(address => mapping(address => mapping(uint256 => bool))) public userPledgeNFTInfos;
@@ -93,7 +94,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
     function redeemETH(address token, uint256 tokenId, uint256 location) public {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
-        require(_gameInfo.unlockTime < block.timestamp, "Cannot be redeemed");
+        require(_gameInfo.playerNumber < 6, "Cannot be redeemed");
         require(_gameInfo.players[location] == msg.sender, "Location error");
 
         uint256 _pledgeETH = userPledgeETHInfos[msg.sender][token][tokenId];
@@ -109,16 +110,16 @@ contract TexasPoker is Ownable, IERC721Receiver {
         emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.RedeemNFT));
     }
 
-    function settlement(address token, uint256 tokenId, uint8 winnerLocation) public payable onlyOwner {
+    function settlement(address token, uint256 tokenId, uint8 winnerLocation) public onlyOwner {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.owner != address(0), "The token is closed");
         require(_gameInfo.open, "The token is closed");
         require(_gameInfo.unlockTime > block.timestamp, "The token is closed");
         require(_gameInfo.playerNumber == 6, "The player number error");
 
-        uint256 amount = getAmount(_gameInfo.price);
-        address owner = _gameInfo.owner;
-        safeTransferETH(owner, amount);
+        (uint256 amount, uint256 fee) = getAmount(_gameInfo.price);
+        safeTransferETH(_gameInfo.owner, amount);
+        withdrawAmount = withdrawAmount + fee;
         userPledgeNFTInfos[_gameInfo.owner][token][tokenId] = false;
         
         address winner = _gameInfo.players[winnerLocation];
@@ -145,6 +146,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
     function withdraw(address to, uint256 amount) public onlyOwner {
         require(to != address(0), "address cannot empty");
+        require(amount <= withdrawAmount, "Lack of balance");
         safeTransferETH(to, amount);
     }
 
@@ -152,10 +154,10 @@ contract TexasPoker is Ownable, IERC721Receiver {
         rate = _rate;
     }
 
-    function getAmount(uint256 price) public view returns (uint256) {
+    function getAmount(uint256 price) public view returns (uint256 settleAmount, uint256 fee) {
         uint256 amount = price * 6;
         uint256 fee = amount * rate / 10000;
-        return amount - fee;
+        return (amount - fee, fee);
     }
 
     function getPlayers(address token, uint256 tokenId) public view returns (address[6] memory players) {
