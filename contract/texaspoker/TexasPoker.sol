@@ -22,6 +22,7 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
     struct GameInfo {
         address owner;
+        uint256 amount;
         uint256 price;
         bool open;
         uint256 unlockTime;
@@ -39,16 +40,16 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
     function pledgeNFT(address token, uint256 tokenId, uint256 amount, uint256 unlockTime) public {
         require(tokenId > 0, "TokenId error");
-        require(amount > 0, "Amount error");
         require(unlockTime > block.timestamp, "UnlockTime error");
 
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.playerNumber == 0, "Player not redeemed");
         _gameInfo.owner = msg.sender;
+        _gameInfo.amount = amount;
         _gameInfo.price = amount / 6;
         _gameInfo.open = true;
         _gameInfo.unlockTime = unlockTime;
-
+        
         ERC721(token).safeTransferFrom(msg.sender, address(this), tokenId);
 
         userPledgeNFTInfos[msg.sender][token][tokenId] = true;
@@ -58,21 +59,26 @@ contract TexasPoker is Ownable, IERC721Receiver {
 
     function redeemNFT(address token, uint256 tokenId) public {
         require(userPledgeNFTInfos[msg.sender][token][tokenId], "TokenId error");
-
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.owner == msg.sender, "TokenId error");
-        require(_gameInfo.playerNumber == 6, "Cannot be redeemed");
-        require(_gameInfo.unlockTime < block.timestamp || _gameInfo.playerNumber == 0, "Cannot be redeemed");
+        require(_gameInfo.playerNumber < 6, "Cannot be redeemed");
 
-        ERC721(token).safeTransferFrom(address(this), msg.sender, tokenId);
+        if (_gameInfo.amount > 0) {
+            require(_gameInfo.unlockTime < block.timestamp, "The unlock time has not expired");
+        }
 
-        userPledgeNFTInfos[msg.sender][token][tokenId] = false;
+        ERC721(token).safeTransferFrom(address(this), _gameInfo.owner, tokenId);
 
-        _gameInfo.open = false;
+        delete userPledgeNFTInfos[msg.sender][token][tokenId];
+        if (_gameInfo.amount > 0) {
+            _gameInfo.owner = address(0);
+            _gameInfo.open = false;
+        } else {
+            delete gameInfos[token][tokenId];
+        }
 
         emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.RedeemNFT));
     }
-
 
     function pledgeETH(address token, uint256 tokenId, uint256 location) public payable {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
@@ -82,7 +88,6 @@ contract TexasPoker is Ownable, IERC721Receiver {
         require(_gameInfo.unlockTime > block.timestamp, "The token is closed");
         require(_gameInfo.playerNumber < 6, "The room is full");
         require(_gameInfo.players[location] == address(0), "The location is occupied");
-
         require(userPledgeETHInfos[msg.sender][token][tokenId] == 0, "Repeat pledge");
         
         userPledgeETHInfos[msg.sender][token][tokenId] = msg.value;
@@ -97,51 +102,46 @@ contract TexasPoker is Ownable, IERC721Receiver {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.playerNumber < 6, "Cannot be redeemed");
         require(_gameInfo.players[location] == msg.sender, "Location error");
-        require(userPledgeETHInfos[msg.sender][token][tokenId] == _gameInfo.price, "Eth error");
+
+        uint256 _pledgeETH = userPledgeETHInfos[msg.sender][token][tokenId];
+        if (_pledgeETH > 0) {
+            safeTransferETH(msg.sender, _pledgeETH);
+            delete userPledgeETHInfos[msg.sender][token][tokenId];
+        }
         
-        safeTransferETH(msg.sender, _pledgeETH);
-
-        userPledgeETHInfos[msg.sender][token][tokenId] = 0;
-
         _gameInfo.players[location] = address(0);
         _gameInfo.playerNumber --;
 
-        emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.RedeemNFT));
+        emit OperationalInfo(token, tokenId, msg.sender, uint(Operation.RedeemETH));
     }
 
     function settlement(address token, uint256 tokenId, uint8 winnerLocation) public onlyOwner {
         GameInfo storage _gameInfo = gameInfos[token][tokenId];
         require(_gameInfo.owner != address(0), "The token is closed");
         require(_gameInfo.open, "The token is closed");
-        require(_gameInfo.unlockTime > block.timestamp, "The token is closed");
         require(_gameInfo.playerNumber == 6, "The player number error");
 
-        (uint256 amount, uint256 fee) = getAmount(_gameInfo.price);
-        address owner = _gameInfo.owner;
-        safeTransferETH(owner, amount);
-        withdrawAmount = withdrawAmount + fee;
-        userPledgeNFTInfos[_gameInfo.owner][token][tokenId] = false;
+        if (_gameInfo.amount > 0) {
+            uint256 settleAmount = getSettleAmount(_gameInfo.amount);
+            uint256 totalAmount = getTotalAmount(token, tokenId, _gameInfo.players);
+            withdrawAmount += totalAmount - settleAmount;
+            safeTransferETH(_gameInfo.owner, settleAmount);
+
+            delete userPledgeETHInfos[_gameInfo.players[0]][token][tokenId];
+            delete userPledgeETHInfos[_gameInfo.players[1]][token][tokenId];
+            delete userPledgeETHInfos[_gameInfo.players[2]][token][tokenId];
+            delete userPledgeETHInfos[_gameInfo.players[3]][token][tokenId];
+            delete userPledgeETHInfos[_gameInfo.players[4]][token][tokenId];
+            delete userPledgeETHInfos[_gameInfo.players[5]][token][tokenId];
+        }
         
         address winner = _gameInfo.players[winnerLocation];
         ERC721(token).safeTransferFrom(address(this), winner, tokenId);
-        userPledgeETHInfos[_gameInfo.players[0]][token][tokenId] = 0;
-        userPledgeETHInfos[_gameInfo.players[1]][token][tokenId] = 0;
-        userPledgeETHInfos[_gameInfo.players[2]][token][tokenId] = 0;
-        userPledgeETHInfos[_gameInfo.players[3]][token][tokenId] = 0;
-        userPledgeETHInfos[_gameInfo.players[4]][token][tokenId] = 0;
-        userPledgeETHInfos[_gameInfo.players[5]][token][tokenId] = 0;
 
-        _gameInfo.owner = address(0);
-        _gameInfo.open = false;
-        _gameInfo.playerNumber = 0;
-        _gameInfo.players[0] = address(0);
-        _gameInfo.players[1] = address(0);
-        _gameInfo.players[2] = address(0);
-        _gameInfo.players[3] = address(0);
-        _gameInfo.players[4] = address(0);
-        _gameInfo.players[5] = address(0);
+        delete userPledgeNFTInfos[_gameInfo.owner][token][tokenId];
+        delete gameInfos[token][tokenId];
         
-        emit OperationalInfo(token, tokenId, owner, uint(Operation.Settlement));
+        emit OperationalInfo(token, tokenId, winner, uint(Operation.Settlement));
     }
 
     function withdraw(address to, uint256 amount) public onlyOwner {
@@ -150,14 +150,24 @@ contract TexasPoker is Ownable, IERC721Receiver {
         safeTransferETH(to, amount);
     }
 
-    function setRate(uint8 _rate) public onlyOwner {
-        rate = _rate;
+    function setRate(uint8 newRate) public onlyOwner {
+        require(newRate <= 10000, "newRate error");
+        rate = newRate;
     }
 
-    function getAmount(uint256 price) public view returns (uint256 settleAmount, uint256 fee) {
-        uint256 _amount = price * 6;
-        uint256 _fee = _amount * rate / 10000;
-        return (_amount - _fee, _fee);
+    function getSettleAmount(uint256 amount) internal view returns (uint256) {
+        return amount - amount * rate / 10000;
+    }
+
+    function getTotalAmount(address token, uint256 tokenId, address[6] storage players) internal view returns (uint256) {
+        uint256 amount;
+        amount += userPledgeETHInfos[players[0]][token][tokenId];
+        amount += userPledgeETHInfos[players[1]][token][tokenId];
+        amount += userPledgeETHInfos[players[2]][token][tokenId];
+        amount += userPledgeETHInfos[players[3]][token][tokenId];
+        amount += userPledgeETHInfos[players[4]][token][tokenId];
+        amount += userPledgeETHInfos[players[5]][token][tokenId];
+        return amount;
     }
 
     function getPlayers(address token, uint256 tokenId) public view returns (address[6] memory players) {
